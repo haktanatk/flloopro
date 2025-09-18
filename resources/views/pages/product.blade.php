@@ -23,12 +23,12 @@
             <input type="search" placeholder="Ara" aria-label="Ara">
         </form>
 
+        {{-- Mini Cart --}}
         <div class="mini-cart" id="miniCart">
             <button class="mini-cart__button" type="button" aria-expanded="false">
                 🛒 Sepet <span class="mini-cart__count">0</span>
             </button>
 
-            <!-- PANEL: başlığa kapat butonu eklendi -->
             <div class="mini-cart__panel" hidden>
                 <div class="mini-cart__head">
                     Sepetiniz
@@ -81,7 +81,7 @@
         </div>
     </div>
 
-    <!-- ÖNERİLEN ÜRÜNLER -->
+    {{-- ÖNERİLEN ÜRÜNLER --}}
     <hr style="margin:36px 0; border:none; border-top:1px solid #eee;">
     <section class="container" style="margin-top:8px;">
         <h2 class="section-title">Önerilen Ürünler</h2>
@@ -100,16 +100,14 @@
                         <img src="{{ $src }}" alt="{{ $rec->name }}">
                     </a>
                     <h3 style="margin:8px 0;">
-                        <a href="{{ route('product.show', ['product' => $rec->id, 'slug' => $slug]) }}">
-                            {{ $rec->name }}
-                        </a>
+                        <a href="{{ route('product.show', ['product' => $rec->id, 'slug' => $slug]) }}">{{ $rec->name }}</a>
                     </h3>
                     <div class="price">₺{{ number_format($rec->price ?? 0, 2, ',', '.') }}</div>
                     <div class="quantity-control" style="margin-top:8px;">
-                        <input type="number" id="oneri-adet-{{ $rec->id }}" value="1" min="1"
-                               style="width:56px; text-align:center;">
-                        <button onclick="addBasket(sku, qty)">Tıkla
-                        Sepete Ekle
+                        <input type="number" id="oneri-adet-{{ $rec->id }}" value="1" min="1" style="width:56px; text-align:center;">
+                        <button type="button"
+                                onclick="addBasket('{{ $rec->sku }}', document.getElementById('oneri-adet-{{ $rec->id }}').value)">
+                            Sepete Ekle
                         </button>
                     </div>
                 </div>
@@ -119,104 +117,126 @@
         </div>
     </section>
 </main>
-</body>
-</html>
-
-
 
 <script>
-
-    $("addBasket(sku ,qty)").on("click", function() {
-         $.ajax({
-        url:'cart-url',
-    type: 'POST',
-    data: {
-        sku:'sku',
-        qty: 'qty',
-        _token: "{{ csrf_token() }}"
-    },
-        success: function(response){
-        console.log("Başarılı:", response);
-        },
-        error: function(xhr){
-        consolne.log("Hata", xhr)
-        }
-        });
-    });
-<script>
-
-
-   function renderMiniCart(data){
-        const root=document.getElementById('miniCart'); if(!root) return;
-        const c=root.querySelector('.mini-cart__count'), ul=root.querySelector('.mini-cart__items'),
-            empty=root.querySelector('.mini-cart__empty'), total=root.querySelector('.mini-cart__total');
-        if (typeof data.count==='number' && c) c.textContent=data.count;
-        if (Array.isArray(data.items) && ul) {
-            ul.innerHTML = data.items.map(it=>{
-                const price=formatTL(it.price), line=formatTL(it.line_total);
-                const img=it.image?`<img class="mini-cart__img" src="${it.image}" alt="${escapeHtml(it.name)}">`:'';
-                return `<li class="mini-cart__item" data-pid="${it.id}">
-        <div class="mini-cart__media">${img}</div>
-        <div class="mini-cart__info">
-          <div class="mini-cart__name">${escapeHtml(it.name)}</div>
-          <div class="mini-cart__meta"><span class="mini-cart__price">₺${price}</span><span class="mini-cart__line-total">₺${line}</span></div>
-          <div class="mini-cart__controls">
-            <button type="button" class="mbtn" data-act="dec">−</button>
-            <span class="mini-cart__qty">×${it.qty}</span>
-            <button type="button" class="mbtn" data-act="inc">+</button>
-            <button type="button" class="mremove" data-act="remove" aria-label="Kaldır">×</button>
-          </div>
-        </div>
-      </li>`;
-            }).join('');
-        }
-        if (empty) empty.style.display = (data.items && data.items.length) ? 'none' : '';
-        if (total && typeof data.total==='number') total.textContent = 'Toplam: ₺' + formatTL(data.total);
+    // --- Sepete ekle (POST /cart -> cart.store) ---
+    async function addBasket(sku, qty = 1){
+        try{
+            const r = await fetch("{{ route('cart.store') }}", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ sku, qty }),
+                credentials: "same-origin"
+            });
+            const res = await r.json();
+            if(r.ok && res.success){ await refreshMiniCart(); openMiniCart(); }
+            else alert(res.message || "Sepete eklenemedi");
+        }catch(e){ console.error(e); alert("Ağ hatası"); }
     }
 
-    const cartRoot=document.getElementById('miniCart');
-    const panelEl=cartRoot?.querySelector('.mini-cart__panel');
-    const overlay=document.querySelector('.mini-cart__overlay');
+    // --- Mini-cart'ı getir (GET /cart -> cart.index) ---
+    async function refreshMiniCart(){
+        const r = await fetch("{{ route('cart.index') }}", { headers: { "Accept": "application/json" }});
+        const data = await r.json().catch(()=>null);
+        if(!data || !data.success) return;
 
-    function openMiniCart(){ if(panelEl?.hasAttribute('hidden')) panelEl.removeAttribute('hidden'); if(overlay?.hasAttribute('hidden')) overlay.removeAttribute('hidden'); cartRoot?.querySelector('.mini-cart__button')?.setAttribute('aria-expanded','true'); }
+        const items = data.cart.items || [];
+        renderMiniCart({
+            items: items.map(it => ({
+                id: it.id, sku: it.sku, name: it.product_name, qty: it.qty,
+                price: it.unit_price, line_total: it.line_total, image: it.image_url
+            })),
+            total: data.cart.total,
+            count: items.reduce((a,b)=> a + Number(b.qty||0), 0)
+        });
+    }
+
+    // --- Mini-cart UI davranışı ---
+    const cartRoot = document.getElementById('miniCart');
+    const panelEl  = cartRoot?.querySelector('.mini-cart__panel');
+    const overlay  = document.querySelector('.mini-cart__overlay');
+
+    function openMiniCart(){ panelEl?.removeAttribute('hidden'); overlay?.removeAttribute('hidden'); cartRoot?.querySelector('.mini-cart__button')?.setAttribute('aria-expanded','true'); }
     function closeMiniCart(){ panelEl?.setAttribute('hidden',''); overlay?.setAttribute('hidden',''); cartRoot?.querySelector('.mini-cart__button')?.setAttribute('aria-expanded','false'); }
 
+    // Panel içi tıklamalar
     ['click','mousedown','mouseup'].forEach(evt=>{
         panelEl?.addEventListener(evt,(e)=>{ e.stopPropagation(); e.stopImmediatePropagation(); }, true);
     });
 
-    cartRoot.addEventListener('click',(e)=>{
-        const openBtn=e.target.closest('.mini-cart__button'); if(openBtn){ e.preventDefault(); openMiniCart(); return; }
-        const closeBtn=e.target.closest('.mini-cart__close'); if(closeBtn){ e.preventDefault(); closeMiniCart(); return; }
-        const actBtn=e.target.closest('[data-act]'); if(actBtn){
-            e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-            const li=actBtn.closest('.mini-cart__item'); if(!li) return;
-            const pid=Number(li.getAttribute('data-pid')); const act=actBtn.getAttribute('data-act');
-            if(!pid || !act) return; updateCart(pid, act); return;
+    cartRoot.addEventListener('click', async (e)=>{
+        const openBtn  = e.target.closest('.mini-cart__button'); if(openBtn){ e.preventDefault(); openMiniCart(); return; }
+        const closeBtn = e.target.closest('.mini-cart__close');  if(closeBtn){ e.preventDefault(); closeMiniCart(); return; }
+
+        // +1 arttır (update route'un yok; doğrudan POST /cart)
+        const incBtn = e.target.closest('.mbtn-inc');
+        if(incBtn){
+            const li  = incBtn.closest('.mini-cart__item');
+            const sku = li?.getAttribute('data-sku');
+            if(sku){ await addBasket(sku, 1); }
+            return;
         }
-        const go=e.target.closest('.mini-cart__footer a[href]'); if(go){ e.preventDefault(); closeMiniCart(); window.location.assign(go.getAttribute('href')); }
+
+        // Satırı sil (DELETE /cart/{id})
+        const removeBtn = e.target.closest('.mremove');
+        if(removeBtn){
+            const li = removeBtn.closest('.mini-cart__item');
+            const id = li?.getAttribute('data-pid');
+            if(!id) return;
+            await fetch(`{{ url('/cart') }}/${id}`, {
+                method: 'DELETE',
+                headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content }
+            });
+            await refreshMiniCart();
+            return;
+        }
     });
 
     overlay.addEventListener('click',()=> closeMiniCart());
     document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeMiniCart(); });
 
-    async function updateCart(productId, action){
-        const r=await fetch("{{ route('cart.update') }}",{
-            method:"POST",
-            headers:{ "Content-Type":"application/json","Accept":"application/json","X-CSRF-TOKEN":document.querySelector('meta[name="csrf-token"]').content },
-            body: JSON.stringify({ product_id: productId, action }), credentials:"same-origin"
-        });
-        const raw=await r.text(); let res={}; try{ res=JSON.parse(raw); }catch(_){ res={message:raw}; }
-        if(r.ok && res.ok) renderMiniCart(res); else alert(`Hata (${r.status}): ${res.message || raw}`);
+    // Sayfa açılışında mini-cart'ı yükle
+    window.addEventListener('load', refreshMiniCart);
+
+    // --- Render helpers ---
+    function renderMiniCart(data){
+        const root=document.getElementById('miniCart'); if(!root) return;
+        const c=root.querySelector('.mini-cart__count'),
+            ul=root.querySelector('.mini-cart__items'),
+            empty=root.querySelector('.mini-cart__empty'),
+            total=root.querySelector('.mini-cart__total');
+
+        if(typeof data.count==='number' && c) c.textContent=data.count;
+
+        if(Array.isArray(data.items) && ul){
+            ul.innerHTML = data.items.map(it=>{
+                const price=formatTL(it.price), line=formatTL(it.line_total);
+                const img=it.image?`<img class="mini-cart__img" src="${it.image}" alt="${escapeHtml(it.name)}">`:'';
+                return `<li class="mini-cart__item" data-pid="${it.id}" data-sku="${it.sku}">
+          <div class="mini-cart__media">${img}</div>
+          <div class="mini-cart__info">
+            <div class="mini-cart__name">${escapeHtml(it.name)}</div>
+            <div class="mini-cart__meta"><span class="mini-cart__price">₺${price}</span><span class="mini-cart__line-total">₺${line}</span></div>
+            <div class="mini-cart__controls">
+              <button type="button" class="mbtn mbtn-inc" aria-label="Arttır">+</button>
+              <span class="mini-cart__qty">×${it.qty}</span>
+              <button type="button" class="mremove" aria-label="Kaldır">×</button>
+            </div>
+          </div>
+        </li>`;
+            }).join('');
+        }
+
+        if (empty) empty.style.display = (data.items && data.items.length) ? 'none' : '';
+        if (total && typeof data.total==='number') total.textContent = 'Toplam: ₺' + formatTL(data.total);
     }
 
     function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
     function formatTL(n){const v=Number(n||0);return v.toFixed(2).replace('.',',');}
-
-    window.addEventListener('load', async()=>{
-        const r=await fetch("{{ route('cart.show') }}",{ headers:{ "Accept":"application/json" }});
-        const data=await r.json().catch(()=>null); if(data && data.ok) renderMiniCart(data);
-    }); */
 </script>
 
 <style>
@@ -249,8 +269,6 @@
     .mini-cart__count{ background:#fff; color:#1f6feb; border-radius:999px; padding:0 .45rem; font-weight:700; }
     .mini-cart__overlay{ position:fixed; inset:0; background:rgba(0,0,0,.06); z-index:1000; }
 </style>
+
 </body>
 </html>
-
-
-

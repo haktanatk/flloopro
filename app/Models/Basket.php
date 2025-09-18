@@ -4,47 +4,67 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 
 class Basket extends Model
 {
     use HasFactory;
 
-    // Modelin ilişkili olduğu veritabanı tablosu
     protected $table = 'baskets';
+    protected $fillable = ['user_id','session_id','status'];
 
-    // Toplu atama (mass assignment) için izin verilen alanlar
-    protected $fillable = ['user_id'];
-
-    /**
-     * Bir sepetin (basket) birden çok sepet öğesi (basket item) olabilir.
-     * Bu, sepet ile sepet öğeleri arasındaki bir-çok ilişkiyi tanımlar.
-     */
     public function items()
     {
         return $this->hasMany(BasketItem::class, 'basket_id');
     }
 
-    /**
-     * Sepete yeni bir ürün ekler veya mevcut ürünü günceller.
-     *
-     * @param int $userId Kullanıcı ID'si
-     * @param array $productData Ürün verisi (sku, qty, name, price vb.)
-     * @return bool
-     */
-    public static function addItemToCart($userId, $productData)
+    public function scopeActive($q) { return $q->where('status','active'); }
+
+
+    public static function currentFor(Request $request): self
     {
-        // Kullanıcının sepeti var mı kontrol et, yoksa yeni bir sepet oluştur
-        $basket = self::firstOrCreate(['user_id' => $userId]);
+        if (auth()->check()) {
+            return static::active()->firstOrCreate(
+                ['user_id' => auth()->id()],
+                ['session_id' => null, 'status' => 'active']
+            );
+        }
 
-        // Sepet öğesini bul veya oluştur
-        $basketItem = $basket->items()->firstOrNew(['sku' => $productData['sku']]);
+        $sid = $request->session()->get('cart_sid');
+        if (!$sid) {
+            $sid = \Illuminate\Support\Str::uuid()->toString();
+            $request->session()->put('cart_sid', $sid);
+        }
 
-        // Eğer ürün sepette zaten varsa miktarını artır, yoksa yeni miktarını ata
-        $basketItem->qty = $basketItem->exists ? $basketItem->qty + $productData['qty'] : $productData['qty'];
-        $basketItem->price = $productData['price'];
-        $basketItem->name = $productData['name'];
-        $basketItem->save();
+        return static::active()->firstOrCreate(
+            ['session_id' => $sid],
+            ['user_id' => null, 'status' => 'active']
+        );
+    }
 
-        return true;
+
+    public function addOrIncrementItem(string $sku, int $qty, float $price, string $name): BasketItem
+    {
+        /** @var BasketItem|null $item */
+        $item = $this->items()->where('sku', $sku)->first();
+
+        if ($item) {
+            $item->qty += $qty;
+            $item->save();
+            return $item;
+        }
+
+        return $this->items()->create([
+            'sku'   => $sku,
+            'qty'   => $qty,
+            'price' => $price,
+            'name'  => $name,
+        ]);
+    }
+
+    /** Sepet toplamını hesapla (model içi) */
+    public function total(): float
+    {
+        return (float) $this->items->sum(fn(BasketItem $i) => $i->line_total);
     }
 }

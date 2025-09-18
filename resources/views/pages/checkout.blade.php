@@ -29,8 +29,6 @@
         .summary-info{ flex:1; display:flex; flex-direction:column; gap:6px; }
         .summary-name{ font-weight:600; }
         .summary-meta{ display:flex; align-items:center; gap:8px; }
-        .mbtn{ padding:2px 8px; border:1px solid #ddd; background:#f7f7f7; border-radius:6px; cursor:pointer; }
-        .mremove{ margin-left:auto; border:none; background:#fff; font-size:18px; cursor:pointer; }
         .summary-price{ text-align:right; min-width:110px; }
         .summary-total{ font-weight:700; }
         .summary-foot .row{ display:flex; justify-content:space-between; margin-top:6px; }
@@ -63,14 +61,22 @@
         <!-- Sol: Form -->
         <form class="checkout__form" onsubmit="return false;">
             <h3>Teslimat Bilgileri</h3>
-            <label><span>Ad Soyad</span><input type="text" placeholder="Adınız Soyadınız"></label>
-            <label><span>E-posta</span><input type="email" placeholder="ornek@email.com"></label>
-            <label><span>Telefon</span><input type="tel" placeholder="5xx xxx xx xx"></label>
-            <label><span>Adres</span><textarea rows="3" placeholder="Açık adresiniz"></textarea></label>
 
-            <h3>Ödeme Yöntemi</h3>
-            <label class="radio"><input type="radio" name="pay" checked> Kredi/Banka Kartı</label>
-            <label class="radio"><input type="radio" name="pay"> Kapıda Ödeme</label>
+            <label><span>Ad Soyad</span>
+                <input id="full_name" name="customer[full_name]" type="text" placeholder="Adınız Soyadınız">
+            </label>
+
+            <label><span>E-posta</span>
+                <input id="email" name="customer[email]" type="email" placeholder="ornek@email.com">
+            </label>
+
+            <label><span>Telefon</span>
+                <input id="phone" name="customer[phone]" type="tel" placeholder="5xx xxx xx xx">
+            </label>
+
+            <label><span>Adres</span>
+                <textarea id="address" name="customer[address]" rows="3" placeholder="Açık adresiniz"></textarea>
+            </label>
 
             <div class="card-grid">
                 <label><span>Kart İsim</span><input type="text" placeholder="AD SOYAD"></label>
@@ -79,7 +85,7 @@
                 <label><span>CVC</span><input type="text" placeholder="123"></label>
             </div>
 
-            <button class="btn btn-block" type="button" onclick="alert('Demo: ödeme entegrasyonu yok')">Siparişi Onayla</button>
+            <button id="btn-order-confirm" class="btn btn-block" type="button">Siparişi Onayla</button>
             <a href="{{ route('shop') }}" class="link-under">← Alışverişe dön</a>
         </form>
 
@@ -107,15 +113,64 @@
         </aside>
     </div> <!-- /.checkout -->
 </section> <!-- /.container -->
-
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
-    /* --- Helpers --- */
-    function tl(n){ return Number(n||0).toFixed(2).replace('.',','); }
-    function escapeHtml(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
+    $(document).on('click', '#btn-order-confirm', async function () {
+        const $btn = $(this).prop('disabled', true).text('İşleniyor...');
 
-    /* --- Render summary from JSON (same shape as cart.show) --- */
-    function renderCheckoutSummaryFromData(data){
+        const customer = {
+            full_name: $('#full_name').val()?.trim(),
+            email:     $('#email').val()?.trim(),
+            phone:     $('#phone').val()?.trim(),
+            address:   $('#address').val()?.trim(),
+        };
+
+        try {
+            const res = await fetch('/checkout/confirm', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content'),
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ customer })
+            });
+
+            if (res.status === 201) {
+                const loc = res.headers.get('Location');
+                if (loc) { window.location = loc; return; }
+                const data = await res.json().catch(()=>null);
+                if (data?.order_number) {
+                    window.location = '/tesekkur?order=' + encodeURIComponent(data.order_number);
+                    return;
+                }
+            }
+
+            const err = await res.json().catch(()=>({message:'İşlem tamamlanamadı'}));
+            alert('Hata: ' + (err.message || 'Bilinmeyen hata'));
+        } catch (e) {
+            alert('Ağ hatası');
+        } finally {
+            $btn.prop('disabled', false).text('Siparişi Onayla');
+        }
+    });
+</script>
+
+<script type="module">
+    const tl = n => '₺' + Number(n||0).toFixed(2);
+
+    async function loadCheckout() {
+        try {
+            const r = await fetch('/cart', { headers: { 'Accept': 'application/json' }});
+            const res = await r.json();
+            renderCheckout(res?.success ? res.cart : null);
+        } catch (e) {
+            console.error(e);
+            renderCheckout(null);
+        }
+    }
+
+    function renderCheckout(cart) {
         const itemsEl = document.getElementById('summaryItems');
         const emptyEl = document.getElementById('summaryEmpty');
         const footEl  = document.getElementById('summaryFoot');
@@ -123,100 +178,100 @@
         const shipEl  = document.getElementById('sumShipping');
         const totEl   = document.getElementById('sumTotal');
 
-        if(!data || !data.ok){
-            emptyEl.hidden=false; itemsEl.innerHTML=''; footEl.hidden=true; return;
+        if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
+            emptyEl.hidden = false;
+            itemsEl.innerHTML = '';
+            footEl.hidden = true;
+            return;
         }
-        const items = data.items || [];
-        if(items.length===0){
-            emptyEl.hidden=false; itemsEl.innerHTML=''; footEl.hidden=true; return;
-        }
+
         emptyEl.hidden = true;
 
+        const items = cart.items.slice().sort((a,b)=>{
+            const an = (a.product_name || a.sku || '').toString();
+            const bn = (b.product_name || b.sku || '').toString();
+            return an.localeCompare(bn, 'tr', { sensitivity:'base' });
+        });
+
         let subtotal = 0;
-        itemsEl.innerHTML = items.map(it=>{
-            const price = Number(it.price||0);
+
+        itemsEl.innerHTML = items.map(it => {
+            const name  = it.product_name || it.sku;
             const qty   = Number(it.qty||0);
-            const line  = price * qty; subtotal += line;
-            const img   = it.image
-                ? `<img class="summary-thumb" src="${it.image}" alt="${escapeHtml(it.name)}">`
+            const price = Number((it.unit_price ?? it.price) || 0);
+            const line  = Number(it.line_total ?? (price * qty));
+            subtotal += line;
+
+            // shop.blade mantığı: eğer tam URL değilse /storage/ öneki ekle
+            const imgPath = it.image_url || '';
+            const imgFull = imgPath.startsWith('http') || imgPath.startsWith('/storage/')
+                ? imgPath
+                : '/storage/' + imgPath.replace(/^\/+/, '');
+
+            const img = imgPath
+                ? `<img class="summary-thumb" src="${imgFull}" alt="${name}">`
                 : `<div class="summary-thumb"></div>`;
-            return `<li class="summary-item" data-pid="${it.id}">
-      ${img}
-      <div class="summary-info">
-        <div class="summary-name">${escapeHtml(it.name)}</div>
-        <div class="summary-meta">
-          <button type="button" class="mbtn" data-checkout-act="dec" data-pid="${it.id}" aria-label="Azalt">−</button>
-          <span class="summary-qty">×${qty}</span>
-          <button type="button" class="mbtn" data-checkout-act="inc" data-pid="${it.id}" aria-label="Arttır">+</button>
-          <button type="button" class="mremove" data-checkout-act="remove" data-pid="${it.id}" aria-label="Kaldır">×</button>
-        </div>
-      </div>
-      <div class="summary-price">
-        <div>₺${tl(price)}</div>
-        <div class="muted">× ${qty}</div>
-        <div class="summary-total">₺${tl(line)}</div>
-      </div>
-    </li>`;
+
+            return `
+            <li class="summary-item">
+              ${img}
+              <div class="summary-info">
+                <div class="summary-name">${name}</div>
+                <div class="summary-meta"><span class="muted">× ${qty}</span></div>
+              </div>
+              <div class="summary-price">
+                <div>${tl(price)}</div>
+                <div class="muted">× ${qty}</div>
+                <div class="summary-total">${tl(line)}</div>
+              </div>
+            </li>`;
         }).join('');
 
         const freeLimit = 750.0;
         const shipping  = subtotal >= freeLimit || subtotal === 0 ? 0 : 49.90;
 
-        subEl.textContent = '₺' + tl(subtotal);
-        shipEl.innerHTML  = shipping===0 && subtotal>0 ? '<span class="free-badge">Ücretsiz</span>' : '₺'+tl(shipping);
-        totEl.textContent = '₺' + tl(subtotal + shipping);
-
+        subEl.textContent = tl(subtotal);
+        shipEl.innerHTML  = shipping === 0 && subtotal > 0
+            ? '<span class="free-badge">Ücretsiz</span>'
+            : tl(shipping);
+        totEl.textContent = tl(subtotal + shipping);
         footEl.hidden = false;
     }
 
-    /* --- Fetch current summary from backend --- */
-    async function fetchCheckoutSummary(){
-        const r = await fetch("{{ route('cart.show') }}", { headers:{ "Accept":"application/json" }});
-        const data = await r.json().catch(()=>null);
-        renderCheckoutSummaryFromData(data);
-    }
-
-    /* --- Update cart from checkout (+/-/remove) --- */
-    async function updateCartCheckout(productId, action){
-        const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
-        const r = await fetch("{{ route('cart.update') }}", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-CSRF-TOKEN": token
-            },
-            body: JSON.stringify({ product_id: productId, action: action }),
-            credentials: "same-origin"
-        });
-        const raw = await r.text(); let res={}; try{ res=JSON.parse(raw); }catch(_){ res={ message:raw }; }
-        console.log("CHECKOUT DEBUG -> update", {status:r.status, pid:productId, act:action, res});
-
-        if (r.ok && res.ok){
-            // Checkout özetini güncelle
-            renderCheckoutSummaryFromData(res);
-            // Varsa mini-cart'ı da güncelle (erkek sayfası ile senkron)
-            if (typeof renderMiniCart === 'function') renderMiniCart(res);
-        } else {
-            alert(`Hata (${r.status}): ${res.message || raw}`);
-        }
-    }
-
-    /* --- Event delegation for +/-/× in summary --- */
-    document.addEventListener('click', (e)=>{
-        const btn = e.target.closest('[data-checkout-act]');
-        if(!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const pid = Number(btn.getAttribute('data-pid'));
-        const act = btn.getAttribute('data-checkout-act'); // inc | dec | remove
-        if(!pid || !act) return;
-        updateCartCheckout(pid, act);
-    });
-
-    /* --- Initial load --- */
-    document.addEventListener('DOMContentLoaded', fetchCheckoutSummary);
+    document.addEventListener('DOMContentLoaded', loadCheckout);
 </script>
+<button id="btn-stock-check">Stok Kontrolü</button>
+<ul id="stock-results"></ul>
+
+<script>
+    $('#btn-stock-check').on('click', function () {
+        $.ajax({
+            url: '/checkout/review',
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+            success: function (res) {
+                const $ul = $('#stock-results').empty();
+                if (!res || !res.success) { $ul.append('<li>Hata</li>'); return; }
+
+                if (res.results.length === 0) { $ul.append('<li>Sepet boş</li>'); return; }
+
+                res.results.forEach(r => {
+                    const line = `${r.sku} → ${r.ok ? 'OK' : ('HATA: ' + r.message)} (İstenen: ${r.requested})`;
+                    $ul.append('<li>'+ line +'</li>');
+                });
+
+                if (res.all_ok) {
+                    $ul.append('<li><strong>Tüm ürünler uygun. Siparişi onaylayabilirsin.</strong></li>');
+                }
+            }
+        });
+    });
+</script>
+
+
+
+
+
 
 </body>
 </html>

@@ -61,31 +61,6 @@
 </body>
 </html>
 
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script>
-    $(document).on("click", ".add-to-cart", function () {
-        var qty = document.getElementById("adet-{{ $product->id }}")
-        var productId = $(this).data("id");
-        var sku = $(this).data("sku");
-        var qty = $("#adet-" + productId).val();
-        $.ajax({
-            url: '/cart',
-            type: 'POST',
-            contentType: 'application/json; charset=UTF-8',
-            data: JSON.stringify({
-                sku: sku,
-                qty: Number(qty),
-                _token: $('meta[name="csrf-token"]').attr('content')
-            }),
-            success: function(response){
-                console.log(response);
-            },
-            error: function(xhr){
-                console.log("Hata", xhr)
-            }
-        });
-    });
-</script>
 
 
 

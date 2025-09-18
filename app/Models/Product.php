@@ -3,10 +3,10 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Product extends Model
 {
+    // Eğer fillable gerekiyorsa ekleyebilirsin, mevcut şema için şart değil.
 
     public function categories()
     {
@@ -18,7 +18,6 @@ class Product extends Model
         );
     }
 
-
     public function scopeForGender($q, ?string $gender)
     {
         if (!$gender) return $q;
@@ -27,6 +26,18 @@ class Product extends Model
             $c->whereIn('gender_scope', [$gender, 'all']);
         });
     }
+
+    /** SKU ile tek ürün getir (null ise yoktur) */
+    public static function findBySku(string $sku): ?self
+    {
+        return static::where('sku', $sku)->first();
+    }
+
+    public static function priceMapBySku(array $skus): array
+    {
+        return static::whereIn('sku', $skus)->pluck('price','sku')->toArray();
+    }
+
 }
 
 

@@ -6,12 +6,9 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        // Kategoriler (Kadın / Erkek / Çocuk)
+
         Schema::create('categories', function (Blueprint $table) {
             $table->id();  // BIGINT AUTO_INCREMENT PRIMARY KEY
             $table->foreignId('parent_id')
@@ -25,7 +22,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Ürünler
+
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -40,7 +37,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Ürün–Kategori çoktan çoğa
+
         Schema::create('product_categories', function (Blueprint $table) {
             $table->foreignId('product_id')
                 ->constrained('products')
@@ -52,9 +49,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
+
     public function down(): void
     {
         Schema::dropIfExists('product_categories');
@@ -62,3 +57,7 @@ return new class extends Migration
         Schema::dropIfExists('categories');
     }
 };
+
+
+
+

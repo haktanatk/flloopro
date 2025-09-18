@@ -9,18 +9,35 @@ class BasketItem extends Model
 {
     use HasFactory;
 
-    // Modelin ilişkili olduğu veritabanı tablosu
     protected $table = 'basket_items';
-
-    // Toplu atama (mass assignment) için izin verilen alanlar
     protected $fillable = ['basket_id', 'sku', 'qty', 'price', 'name'];
 
-    /**
-     * Bir sepet öğesi (basket item) bir sepete (basket) aittir.
-     * Bu, sepet öğesi ile sepet arasındaki bir-bir ilişkiyi tanımlar.
-     */
+    protected $appends = ['line_total', 'image_url', 'product_name'];
+    protected $with = ['productBySku'];
+
     public function basket()
     {
         return $this->belongsTo(Basket::class, 'basket_id');
+    }
+
+    public function productBySku()
+    {
+        return $this->belongsTo(Product::class, 'sku', 'sku');
+    }
+
+    public function getLineTotalAttribute(): float
+    {
+        return (float) ($this->qty * $this->price);
+    }
+
+    public function getProductNameAttribute(): ?string
+    {
+        if (!empty($this->name)) return $this->name;
+        return $this->productBySku?->name;
+    }
+
+    public function getImageUrlAttribute(): ?string
+    {
+        return $this->productBySku?->image_url;
     }
 }

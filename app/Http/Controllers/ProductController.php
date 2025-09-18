@@ -2,47 +2,25 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Support\Facades\DB;
 use App\Models\Product;
 
 class ProductController extends Controller
 {
     public function erkekUrunleri()
     {
-        $products = DB::table('products')
-            ->join('product_categories', 'products.id', '=', 'product_categories.product_id')
-            ->join('categories', 'categories.id', '=', 'product_categories.category_id')
-            ->where('categories.gender_scope', 'erkek')
-            ->select('products.*')
-            ->distinct()
-            ->get();
-
+        $products = Product::forGender('erkek')->distinct()->get();
         return view('pages.erkek', compact('products'));
     }
 
     public function kadinUrunleri()
     {
-        $products = DB::table('products')
-            ->join('product_categories', 'products.id', '=', 'product_categories.product_id')
-            ->join('categories', 'categories.id', '=', 'product_categories.category_id')
-            ->where('categories.gender_scope', 'kadin')
-            ->select('products.*')
-            ->distinct()
-            ->get();
-
+        $products = Product::forGender('kadin')->distinct()->get();
         return view('pages.kadin', compact('products'));
     }
 
     public function cocukUrunleri()
     {
-        $products = DB::table('products')
-            ->join('product_categories', 'products.id', '=', 'product_categories.product_id')
-            ->join('categories', 'categories.id', '=', 'product_categories.category_id')
-            ->where('categories.gender_scope', 'cocuk')
-            ->select('products.*')
-            ->distinct()
-            ->get();
-
+        $products = Product::forGender('cocuk')->distinct()->get();
         return view('pages.cocuk', compact('products'));
     }
 
@@ -52,7 +30,6 @@ class ProductController extends Controller
             ->inRandomOrder()
             ->take(4)
             ->get();
-
 
         return view('pages.product', compact('product', 'recommended'));
     }
